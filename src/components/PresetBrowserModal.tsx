@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { SynthPreset } from '../types/synth';
 import { FACTORY_PRESETS, PRESET_CATEGORIES, PRESET_GENRES } from '../constants/presets';
 import {
@@ -8,7 +8,9 @@ import {
   FolderOpen,
   ArrowRight,
   Shuffle,
-  Download
+  Download,
+  Star,
+  Dices
 } from 'lucide-react';
 
 interface PresetBrowserModalProps {
@@ -35,21 +37,64 @@ export const PresetBrowserModal: React.FC<PresetBrowserModalProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedGenre, setSelectedGenre] = useState<string>('All');
+  const [showOnlyFavorites, setShowOnlyFavorites] = useState(false);
   const [activePreviewPreset, setActivePreviewPreset] = useState<SynthPreset>(currentPreset);
+
+  // Favorites stored in localStorage
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('synthforge_favorites');
+      return saved ? new Set(JSON.parse(saved)) : new Set(['sub_gravity_808', 'neon_blade_lead', 'cosmic_aurora_pad']);
+    } catch {
+      return new Set(['sub_gravity_808', 'neon_blade_lead']);
+    }
+  });
+
+  const toggleFavorite = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFavoriteIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        localStorage.setItem('synthforge_favorites', JSON.stringify([...next]));
+      } catch {}
+      return next;
+    });
+  };
+
+  // Category counts
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { All: FACTORY_PRESETS.length };
+    FACTORY_PRESETS.forEach((p) => {
+      counts[p.category] = (counts[p.category] || 0) + 1;
+    });
+    return counts;
+  }, []);
 
   const filteredPresets = useMemo(() => {
     return FACTORY_PRESETS.filter((p) => {
+      if (showOnlyFavorites && !favoriteIds.has(p.id)) return false;
+
       const matchesSearch =
+        searchQuery === '' ||
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()));
+        p.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase()));
 
       const matchesCat = selectedCategory === 'All' || p.category === selectedCategory;
       const matchesGenre = selectedGenre === 'All' || p.genres.includes(selectedGenre);
 
       return matchesSearch && matchesCat && matchesGenre;
     });
-  }, [searchQuery, selectedCategory, selectedGenre]);
+  }, [searchQuery, selectedCategory, selectedGenre, showOnlyFavorites, favoriteIds]);
+
+  const handleRandomInspire = () => {
+    const randomIndex = Math.floor(Math.random() * FACTORY_PRESETS.length);
+    const chosen = FACTORY_PRESETS[randomIndex];
+    setActivePreviewPreset(chosen);
+    onSelectPreset(chosen);
+  };
 
   const exportPresetJson = (preset: SynthPreset) => {
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(preset, null, 2));
@@ -66,55 +111,70 @@ export const PresetBrowserModal: React.FC<PresetBrowserModalProps> = ({
       <div className="bg-[#10141c] border border-neutral-700/80 rounded-xl shadow-2xl max-w-5xl w-full h-[85vh] flex flex-col text-neutral-200 overflow-hidden font-sans">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-neutral-800 bg-[#0d1017]">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400">
               <FolderOpen className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-base font-bold text-white tracking-wide flex items-center gap-2 font-mono">
-                SYNTHFORGE PRESET FOUNDRY
+                SYNTHFORGE SOUND VAULT
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  {FACTORY_PRESETS.length} PRESETS
+                </span>
               </h2>
               <p className="text-xs text-neutral-400 font-mono">
-                {FACTORY_PRESETS.length} Flagship Handcrafted Patches
+                Showing {filteredPresets.length} matching presets across {PRESET_CATEGORIES.length - 1} sound banks
               </p>
             </div>
           </div>
 
-          {/* Mutate Controls */}
-          <div className="flex items-center gap-2 bg-neutral-900 border border-neutral-800 p-1 rounded-lg font-mono text-xs">
-            <span className="text-neutral-500 text-[10px] uppercase px-1 flex items-center gap-1">
-              <Shuffle className="w-3 h-3 text-amber-400" />
-              MUTATE:
-            </span>
+          {/* Quick Tools: Random Inspire & Mutate Controls */}
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => onMutatePatch('subtle')}
-              className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-colors"
-              title="Controlled subtle timbral variation"
+              onClick={handleRandomInspire}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/40 font-mono text-xs font-bold transition-all shadow-[0_0_10px_rgba(245,158,11,0.2)]"
+              title="Audition a random preset immediately"
             >
-              Subtle
+              <Dices className="w-3.5 h-3.5" />
+              <span>INSPIRE ME</span>
             </button>
+
+            {/* Mutate Controls */}
+            <div className="hidden sm:flex items-center gap-1 bg-neutral-900 border border-neutral-800 p-1 rounded-lg font-mono text-xs">
+              <span className="text-neutral-500 text-[10px] uppercase px-1 flex items-center gap-1">
+                <Shuffle className="w-3 h-3 text-amber-400" />
+                MUTATE:
+              </span>
+              <button
+                onClick={() => onMutatePatch('subtle')}
+                className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-colors"
+                title="Controlled subtle timbral variation"
+              >
+                Subtle
+              </button>
+              <button
+                onClick={() => onMutatePatch('moderate')}
+                className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-colors"
+                title="Moderate timbral variation"
+              >
+                Moderate
+              </button>
+              <button
+                onClick={() => onMutatePatch('extreme')}
+                className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 transition-colors"
+                title="Wild experimental metamorphosis"
+              >
+                Extreme
+              </button>
+            </div>
+
             <button
-              onClick={() => onMutatePatch('moderate')}
-              className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-colors"
-              title="Moderate timbral variation"
+              onClick={onClose}
+              className="w-8 h-8 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white flex items-center justify-center transition-colors"
             >
-              Moderate
-            </button>
-            <button
-              onClick={() => onMutatePatch('extreme')}
-              className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 transition-colors"
-              title="Wild experimental metamorphosis"
-            >
-              Extreme
+              ✕
             </button>
           </div>
-
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white flex items-center justify-center transition-colors"
-          >
-            ✕
-          </button>
         </div>
 
         {/* Filters and Search Bar */}
@@ -124,29 +184,26 @@ export const PresetBrowserModal: React.FC<PresetBrowserModalProps> = ({
             <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-neutral-500" />
             <input
               type="text"
-              placeholder="Search by preset name, genre, mood..."
+              placeholder="Search 300+ presets by name, genre, mood, engine..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-neutral-900 border border-neutral-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500"
             />
           </div>
 
-          {/* Category Tabs */}
-          <div className="flex items-center gap-1 overflow-x-auto py-0.5 max-w-full">
-            {PRESET_CATEGORIES.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-2.5 py-1 rounded text-xs transition-colors whitespace-nowrap ${
-                  selectedCategory === cat
-                    ? 'bg-amber-500 text-neutral-950 font-bold'
-                    : 'bg-neutral-900 text-neutral-400 hover:text-white'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
+          {/* Favorites Filter Button */}
+          <button
+            onClick={() => setShowOnlyFavorites(!showOnlyFavorites)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-colors ${
+              showOnlyFavorites
+                ? 'bg-amber-500 text-neutral-950 font-bold border-amber-400'
+                : 'bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-white'
+            }`}
+            title="Filter by Favorites"
+          >
+            <Star className={`w-3.5 h-3.5 ${showOnlyFavorites ? 'fill-neutral-950' : 'text-amber-400'}`} />
+            <span>Favorites ({favoriteIds.size})</span>
+          </button>
 
           {/* Genre Dropdown */}
           <select
@@ -154,82 +211,146 @@ export const PresetBrowserModal: React.FC<PresetBrowserModalProps> = ({
             onChange={(e) => setSelectedGenre(e.target.value)}
             className="bg-neutral-900 border border-neutral-800 text-neutral-300 rounded-lg px-2.5 py-1.5 text-xs outline-none"
           >
-            {PRESET_GENRES.map(g => <option key={g} value={g}>{g}</option>)}
+            {PRESET_GENRES.map((g) => (
+              <option key={g} value={g}>
+                Genre: {g}
+              </option>
+            ))}
           </select>
+        </div>
+
+        {/* Category Tabs Strip with dynamic counts */}
+        <div className="px-3 py-1.5 bg-[#0e1219] border-b border-neutral-800/80 flex items-center gap-1 overflow-x-auto text-xs font-mono">
+          {PRESET_CATEGORIES.map((cat) => {
+            const count = categoryCounts[cat] || 0;
+            const isSelected = selectedCategory === cat && !showOnlyFavorites;
+            return (
+              <button
+                key={cat}
+                onClick={() => {
+                  setSelectedCategory(cat);
+                  setShowOnlyFavorites(false);
+                }}
+                className={`px-3 py-1 rounded-lg text-xs transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                  isSelected
+                    ? 'bg-amber-500 text-neutral-950 font-bold shadow-[0_0_8px_rgba(245,158,11,0.4)]'
+                    : 'bg-neutral-900/60 text-neutral-400 hover:text-white hover:bg-neutral-800'
+                }`}
+              >
+                <span>{cat}</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                    isSelected ? 'bg-neutral-950/30 text-neutral-950' : 'bg-neutral-800 text-neutral-500'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Main Body: List on Left, Preview Card on Right */}
         <div className="flex-1 grid grid-cols-1 md:grid-cols-12 overflow-hidden">
           {/* Preset List (7 cols) */}
-          <div className="md:col-span-7 overflow-y-auto p-3 space-y-2 border-r border-neutral-800">
-            {filteredPresets.map((p) => {
-              const isCurrent = currentPreset.id === p.id;
-              const isPreview = activePreviewPreset.id === p.id;
-              const isA = presetA.id === p.id;
-              const isB = presetB.id === p.id;
-
-              return (
-                <div
-                  key={p.id}
-                  onClick={() => setActivePreviewPreset(p)}
-                  onDoubleClick={() => {
-                    onSelectPreset(p);
-                    onClose();
+          <div className="md:col-span-7 overflow-y-auto p-3 space-y-1.5 border-r border-neutral-800">
+            {filteredPresets.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-48 text-neutral-500 font-mono text-xs">
+                <span>No presets match the current filter</span>
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSelectedCategory('All');
+                    setSelectedGenre('All');
+                    setShowOnlyFavorites(false);
                   }}
-                  className={`p-3 rounded-lg border transition-all cursor-pointer flex items-center justify-between gap-3 ${
-                    isPreview
-                      ? 'bg-neutral-800/90 border-amber-500/70 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
-                      : 'bg-neutral-900/50 border-neutral-800 hover:bg-neutral-800/50'
-                  }`}
+                  className="mt-2 text-amber-400 hover:underline"
                 >
-                  <div className="flex flex-col gap-0.5 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-white truncate">
-                        {p.name}
-                      </span>
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded uppercase bg-neutral-800 text-amber-400 border border-neutral-700">
-                        {p.category}
-                      </span>
-                      {isCurrent && (
-                        <span className="text-[9px] font-mono px-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                          Active
-                        </span>
-                      )}
-                      {isA && (
-                        <span className="text-[9px] font-mono px-1 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                          Morph A
-                        </span>
-                      )}
-                      {isB && (
-                        <span className="text-[9px] font-mono px-1 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30">
-                          Morph B
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-xs text-neutral-400 font-sans truncate">
-                      {p.description}
-                    </span>
-                    <div className="flex items-center gap-2 text-[10px] font-mono text-neutral-500">
-                      <span>{p.genres.join(', ')}</span>
-                      <span>•</span>
-                      <span>by {p.author}</span>
-                    </div>
-                  </div>
+                  Clear all filters
+                </button>
+              </div>
+            ) : (
+              filteredPresets.map((p) => {
+                const isCurrent = currentPreset.id === p.id;
+                const isPreview = activePreviewPreset.id === p.id;
+                const isA = presetA.id === p.id;
+                const isB = presetB.id === p.id;
+                const isFav = favoriteIds.has(p.id);
 
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => setActivePreviewPreset(p)}
+                    onDoubleClick={() => {
                       onSelectPreset(p);
                       onClose();
                     }}
-                    className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-amber-500 hover:text-neutral-950 text-neutral-300 font-mono text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1"
+                    className={`p-2.5 rounded-lg border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                      isPreview
+                        ? 'bg-neutral-800/90 border-amber-500/70 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
+                        : 'bg-neutral-900/50 border-neutral-800 hover:bg-neutral-800/50'
+                    }`}
                   >
-                    <span>Load</span>
-                    <ArrowRight className="w-3 h-3" />
-                  </button>
-                </div>
-              );
-            })}
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {/* Favorite Star Button */}
+                      <button
+                        onClick={(e) => toggleFavorite(p.id, e)}
+                        className="text-neutral-600 hover:text-amber-400 transition-colors p-1"
+                        title={isFav ? 'Remove from favorites' : 'Add to favorites'}
+                      >
+                        <Star className={`w-3.5 h-3.5 ${isFav ? 'fill-amber-400 text-amber-400' : ''}`} />
+                      </button>
+
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-white truncate">
+                            {p.name}
+                          </span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded uppercase bg-neutral-800 text-amber-400 border border-neutral-700">
+                            {p.category}
+                          </span>
+                          {isCurrent && (
+                            <span className="text-[9px] font-mono px-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                              Active
+                            </span>
+                          )}
+                          {isA && (
+                            <span className="text-[9px] font-mono px-1 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                              A
+                            </span>
+                          )}
+                          {isB && (
+                            <span className="text-[9px] font-mono px-1 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30">
+                              B
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-neutral-400 font-sans truncate">
+                          {p.description}
+                        </span>
+                        <div className="flex items-center gap-2 text-[10px] font-mono text-neutral-500">
+                          <span>{p.genres.join(', ')}</span>
+                          <span>•</span>
+                          <span>{p.layers.filter((l) => l.enabled).length} layers</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectPreset(p);
+                        onClose();
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-amber-500 hover:text-neutral-950 text-neutral-300 font-mono text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1"
+                    >
+                      <span>Load</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                );
+              })
+            )}
           </div>
 
           {/* Preset Detail & Morph Assigner (5 cols) */}
@@ -269,7 +390,7 @@ export const PresetBrowserModal: React.FC<PresetBrowserModalProps> = ({
                   Layer Architecture
                 </span>
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  {activePreviewPreset.layers.map(l => (
+                  {activePreviewPreset.layers.map((l) => (
                     <div key={l.id} className="p-2 rounded bg-neutral-900/60 border border-neutral-800">
                       <div className="font-bold text-white">L{l.id}: {l.name}</div>
                       <div className="text-neutral-500 uppercase">{l.role} • {l.engine}</div>
@@ -280,7 +401,7 @@ export const PresetBrowserModal: React.FC<PresetBrowserModalProps> = ({
 
               {/* Tags */}
               <div className="flex flex-wrap gap-1.5">
-                {activePreviewPreset.tags.map(t => (
+                {activePreviewPreset.tags.map((t) => (
                   <span key={t} className="text-[10px] px-2 py-0.5 rounded bg-neutral-900 text-neutral-400 border border-neutral-800">
                     #{t}
                   </span>
