@@ -1,0 +1,6 @@
+{
+  "name": "SynthForge - Flagship Modern Software Synthesizer",
+  "description": "Flagship hybrid synthesizer featuring 4 sound layers (Analog, Wavetable, Spectral, FM/Sample), Sound Morph, Transform engine, Motion modulation, Musical Context integration, and master FX rack.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
